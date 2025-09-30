@@ -429,7 +429,7 @@ df_results = pd.DataFrame(history_data)
 df_results.to_csv('./history.csv', index=False)
 
 
-# Encoding data
+# Encoding data -- Evaluation
 model = tf.keras.models.load_model("model.keras")
 encoder = Model(inputs=model.input, outputs=model.get_layer('dense_2').output)
 decoder_CL = Model(inputs=model.get_layer('dense_2').output, outputs=model.get_layer('dense_7').output)
@@ -438,3 +438,12 @@ decoder = Model(inputs=model.get_layer('dense_2').output, outputs=model.get_laye
 
 x_lat_data = encoder.predict(y_1)
 np.save('x_lat.npy', x_lat_data)    # latent variables for all the data
+
+# Computing measurement noise from test cases
+p_pred = decoder_pres.predict(x_lat)
+p_pred_cases = p_pred.reshape(n_cases, nsnap, p_pred.shape[-1])
+error = p_pred_cases[idx_test] - y_pres_cases[idx_test]
+error = error.reshape((-1,error.shape[-1]))
+std_per_sensor = np.std(error, axis=0)  # shape (11,)
+std_meas = np.mean(std_per_sensor)
+np.save('std_meas.npy', std_meas)
