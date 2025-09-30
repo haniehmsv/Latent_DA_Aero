@@ -8,7 +8,7 @@ import os
 os.chdir('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/dynamics/NeuralODE_lat_dim_7_long_time')
 os.getcwd()
 
-# load reduced-order data, together with the same training and testing indices used for training the autoencoder
+#----- load reduced-order data, together with the same training and testing indices used for training the autoencoder -----#
 x_lat = np.load('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/x_lat.npy')
 idx_train = np.load('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/idx_train.npy')
 idx_test = np.load('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/idx_test.npy')
@@ -130,7 +130,7 @@ x_lat_data_test = x_lat_data_test[:,initial_lag:,:]
 nsnap_lagged = nsnap - initial_lag
 
 
-# Training Neural ODE to learn latent dynamics
+#----------------- Training Neural ODE to learn latent dynamics -----------------#
 class LatentODEFunc(tf.keras.Model):
     def __init__(self, hidden_dim=256, **kwargs):
         super().__init__(**kwargs)
@@ -254,7 +254,7 @@ optimizer = tf.keras.optimizers.Adam(amsgrad=True)
 train_latent_ode(x_lat_train, x_lat_test, latent_dynamics_model, optimizer, epochs=epochs, alpha=alpha, beta=beta)
 
 
-# Evaluation on test data
+#-------------------- Evaluation on test data -----------------------#
 forward_model = tf.keras.models.load_model('forward_model.keras', custom_objects={'LatentODEFunc': LatentODEFunc})
 
 def autoregressive_rollout(model, x0, nsnap, dt, lat_dim=7):

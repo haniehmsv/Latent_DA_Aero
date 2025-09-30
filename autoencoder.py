@@ -275,6 +275,8 @@ train_dataset = train_dataset.batch(batch_size, drop_remainder=True).shuffle(buf
 test_dataset = tf.data.Dataset.from_tensor_slices((X_test, X_test_CL, X_test_pres))
 test_dataset = test_dataset.batch(batch_size, drop_remainder=True).repeat().prefetch(tf.data.experimental.AUTOTUNE)
 
+
+#----------------------------- Training setup -----------------------------------#
 continue_state = True   # Set this to True to continue training from a saved model
 
 if continue_state:
@@ -370,7 +372,7 @@ def val_step(y_batch, y_CL_true, y_pres_true):
     val_total_loss = val_loss_vort + beta_lift * val_loss_CL + beta_pres * val_loss_pres + beta_latent * val_loss_temporal
     return val_total_loss
 
-# Training loop with early stopping
+#-------------------------- Training loop with early stopping ---------------------#
 for epoch in range(epochs):
     train_loss = 0.0
     train_vort = 0.0
@@ -429,7 +431,7 @@ df_results = pd.DataFrame(history_data)
 df_results.to_csv('./history.csv', index=False)
 
 
-# Encoding data -- Evaluation
+#------------------------------ Evaluation-Encoding data ---------------------#
 model = tf.keras.models.load_model("model.keras")
 encoder = Model(inputs=model.input, outputs=model.get_layer('dense_2').output)
 decoder_CL = Model(inputs=model.get_layer('dense_2').output, outputs=model.get_layer('dense_7').output)
@@ -439,7 +441,7 @@ decoder = Model(inputs=model.get_layer('dense_2').output, outputs=model.get_laye
 x_lat_data = encoder.predict(y_1)
 np.save('x_lat.npy', x_lat_data)    # latent variables for all the data
 
-# Computing measurement noise from test cases
+#------------------------- Computing measurement noise from test cases ----------------#
 p_pred = decoder_pres.predict(x_lat)
 p_pred_cases = p_pred.reshape(n_cases, nsnap, p_pred.shape[-1])
 error = p_pred_cases[idx_test] - y_pres_cases[idx_test]

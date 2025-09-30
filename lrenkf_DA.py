@@ -169,3 +169,6 @@ lowrankEnKF = LREnKFParameters(forecast, observation, fdata, odata, dt_dyn, dt_o
 Xf, Xa, Cx_history, Cy_history, rxhist, ryhist = lrenkf(lowrankEnKF, X0.copy(), beta=1.0)
 
 np.savez('AoA60_test.npz', Xa=Xa, Xf=Xf, Cx_history=Cx_history, Cy_history=Cy_history, rxhist=rxhist, ryhist=ryhist)
+
+
+## Then, we only need to lift the latent state analysis ensemble (Xa) back to the full state space thriugh the pretrained decoder.
