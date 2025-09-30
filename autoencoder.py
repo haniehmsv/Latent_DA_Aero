@@ -99,52 +99,6 @@ def load_vorticity_pressure_lift(AoA:np.ndarray, ranget, rangep, cases:np.ndarra
     y_1 = np.expand_dims(y_1, axis=-1)
     return y_1, y_CL, y_pres
 
-def load_gust_parameters(AoA, cases, nsnap):
-    """
-    Load gust disturbance parameters for specified angles of attack (AoA) and gust cases.
-
-    This function reads gust-related parameters stored in `.jld2` files for each 
-    (AoA, gust case) combination and aggregates them into arrays for analysis or 
-    training. The parameters characterize the spatial and temporal properties of 
-    the incoming gusts.
-
-    Args:
-        AoA (array-like): List or array of angles of attack to include (e.g., [20, 30, 40, 50, 60]).
-        cases (array-like): List or array of gust disturbance identifiers.
-        nsnap (int): Number of snapshots per case (not used directly in this function, 
-                     but often relevant for downstream alignment with flow data).
-
-    Returns:
-        Dy (np.ndarray): Array of gust strength in the y-direction across cases.
-        sigma (np.ndarray): Array of gust width (σx) across cases.
-        y0 (np.ndarray): Array of initial vertical gust positions across cases.
-        t0 (np.ndarray): Array of gust initiation times in the shedding cycle across cases.
-
-    Notes:
-        - Each file is expected at path:
-          `/u/project/sofia/hanieh/EnKFthroughLearnedOperators/data_generation_gaussian_forcing/AoA{num}/AoA{num}_RD{j}.jld2`
-        - Parameters are read directly from dataset keys: `Dy`, `σx`, `y0`, and `t0`.
-        - Output arrays are ordered consistently with the nested loop over AoA and cases.
-    """
-    Dy = []
-    sigma = []
-    y0 = [] 
-    t0 = []
-    # gust cases
-    for num in AoA:
-        for j in cases:
-            path = f'/u/project/sofia/hanieh/EnKFthroughLearnedOperators/data_generation_gaussian_forcing/AoA{num}/AoA{num}_RD{j}.jld2'
-            with h5py.File(path, "r") as output:
-                Dy.append(output['Dy'][()])
-                sigma.append(output['σx'][()])
-                y0.append(output['y0'][()])
-                t0.append(output['t0'][()])
-    Dy = np.array(Dy)
-    sigma = np.array(sigma)
-    y0 = np.array(y0)
-    t0 = np.array(t0)
-    return Dy, sigma, y0, t0
-
 def construct_grid(xrange, yrange, nx:int, ny:int):
     """
     Construct a 2D Cartesian grid from given ranges and resolution.
