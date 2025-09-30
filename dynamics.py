@@ -317,8 +317,10 @@ for i in range(len(idx_test)):
 x_pred_cases = np.array(x_pred_cases)
 x_pred_cases = np.squeeze(x_pred_cases, axis=1)
 
+# computing empirical residual covariance 7*7
 error = x_pred_cases - x_lat_test[:,:,:lat_dim]
 error = tf.reshape(error,(-1,error.shape[-1]))
-std_per_dim = np.std(error, axis=0)  # shape (lat_dim,)
-std_dyn = np.mean(std_per_dim)  # residual differences between predicted and true latent trajectories over all test cases, used as process noise
-np.save('std_dyn_rollout.npy', std_dyn)
+error_centered = error - tf.reduce_mean(error, axis=0, keepdims=True)
+N = tf.shape(error)[0]
+Q = tf.matmul(error_centered, error_centered, transpose_a=True) / tf.cast(N - 1, tf.float32)
+np.save('Q.npy', Q)
