@@ -8,14 +8,12 @@ For filtering problems, we specifically need a **forecast operator** that evolve
 ## Steps to execute the workflow
 Follow the steps below in the specified order to execute the workflow:
 1. Extract/learn a reduced state space (here by training a physics-augmented autoencoder):
+
 Run the file `autoencoder.py` to train an autoencoder that extracts the underlying latent variables from data. These latent variables represent the reduced-order features of the vorticity field and lift coefficient while containing information about pressure observations as well. The observation operator is simultaneouly learned within the autoencoder.
 2. Learn a dynamical model in the reduced latent space:
-Execute `dynamics.py` to train a Multi-Layer Perceptron (MLP) network. This network maps sparse, clean surface pressure measurements to the extracted latent variables deterministically. The trained model will later be used for Gramian calculation.
-3. Calculate Dominant Directions:
-Run `noise_in_dominant_direction.py` to identify and store the dominant directions of both the measurement and latent variable spaces at each time step. Perturb the measurements along the dominant eigenvector of the measurement space Gramian, C_x.
-4. Train the Bayesian Neural Network Using MC Dropout:
-Use `probabilisticPressureNetwork.py` to train a Bayesian Neural Network. This model estimates the statistics of the latent variables by predicting the mean and covariance matrix of a multivariate normal distribution in the latent space. The training process minimizes the negative log-likelihood.
-5. Flow Reconstruction and Uncertainty Quantification:
-Finally, execute `flowReconstructionAndUQ.py` to:
-- Estimate the latent variables while quantifying aleatoric (data-driven) and epistemic (model-driven) uncertainties.
-- Map the estimated latent space samples back to the original high-dimensional space to reconstruct the vorticity field and lift coefficient.
+
+Run `dynamics.py` to train a Neural ODE that models the latent dynamics. The angle of attack, encoded as an additional input, augments the latent states, which are then advanced through the learned Markovian dynamics. This file also estimates the process noise as the empirical covariance of the residuals.
+3. Perform data assimilation in the learned reduced space:
+
+Run `lrenkf_DA.py` to apply the low-rank Ensemble Kalman Filter (LR-EnKF), as proposed in [A low-rank nonlinear ensemble filter
+for vortex models of aerodynamic flows](https://arc.aiaa.org/doi/abs/10.2514/6.2021-1937). This script carries out state estimation in the low-dimensional latent space using sparse, noisy pressure measurements. The Kalman update is restricted to a subspace defined by the dominant directions of the observation-space Gramian. The filter implementation is provided in `LREnKF.py`.
