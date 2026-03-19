@@ -1,5 +1,5 @@
 # Latent_DA_Aero
-![Demo of Latent_DA_Aero](vorticity_animation.gif)
+![Demo of Latent_DA_Aero](vorticity_animation_AoA20.gif)
 
 A machine-learning tool to sequentially estimate the strongly disturbed aerodynamic states using sparse noisy pressure measurements. This code levereges data assimilation in a reduced state space to make estimation fast and efficient for real-time applications. Although the attached code is tailored to our paper [Sequential estimation of disturbed aerodynamic flows from sparse measurements via a reduced latent space](https://arxiv.org/abs/2509.03795)---where vorticity snapshots and lift coefficients serve as the flow states and pressure measurements as the observations, with an autoencoder used for dimensionality reduction---it can be readily applied to data assimilation in any reduced space, provided that a mapping from the reduced space to the original physical space is available. Only minor modifications are required in such cases.
 
