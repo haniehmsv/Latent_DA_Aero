@@ -3,6 +3,8 @@
 
 A machine-learning tool to sequentially estimate the strongly disturbed aerodynamic states using sparse noisy pressure measurements. This code levereges data assimilation in a reduced state space to make estimation fast and efficient potentially for real-time applications. Although the attached code is tailored to our paper [Sequential estimation of disturbed aerodynamic flows from sparse measurements via a reduced latent space](https://arxiv.org/abs/2509.03795)---where vorticity snapshots and lift coefficients serve as the flow states and pressure measurements as the observations, with an autoencoder used for dimensionality reduction---it can be readily applied to data assimilation in any reduced space, provided that a mapping from the reduced space to the original physical space is available. Only minor modifications are required in such cases.
 
+The attached animation shows an excellent convergence of estimation toward the reference vorticity field starting from an initial condition with a distance from the truth.
+
 For filtering problems, we specifically need a **forecast operator** that evolves the underlying flow states as well as an **observation operator** to map states to the corresponding observations. In a reduced space, these two models need to be learned. 
 
 ## Steps to execute the workflow
