@@ -309,16 +309,16 @@ def one_step_prediction(model, x_true, dt, lat_dim=7):
     
     return tf.stack(x_pred_1, axis=1)  # shape: (batch, nsnap, lat_dim)
 
-x_pred_cases = []
+x_pred_cases_one_step = []
 for i in range(len(idx_test)):
-    x0 = x_lat_test[i,0]
-    x_lat_pred_ = autoregressive_rollout(forward_model, x0, nsnap_lagged, dt, lat_dim=lat_dim)
-    x_pred_cases.append(x_lat_pred_.numpy().copy())
-x_pred_cases = np.array(x_pred_cases)
-x_pred_cases = np.squeeze(x_pred_cases, axis=1)
+    x_true_ = x_lat_test[i]
+    x_lat_pred_ = one_step_prediction(forward_model, x_true_, dt, lat_dim=lat_dim)
+    x_pred_cases_one_step.append(x_lat_pred_.numpy().copy())
+x_pred_cases_one_step = np.array(x_pred_cases_one_step)
+x_pred_cases_one_step = np.squeeze(x_pred_cases_one_step, axis=1)
 
 # computing empirical residual covariance 7*7
-error = x_pred_cases - x_lat_test[:,:,:lat_dim]
+error = x_pred_cases_one_step - x_lat_test[:,:,:lat_dim]
 error = tf.reshape(error,(-1,error.shape[-1]))
 error_centered = error - tf.reduce_mean(error, axis=0, keepdims=True)
 N = tf.shape(error)[0]
