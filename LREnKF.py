@@ -13,7 +13,7 @@ RYDEFAULT = 100
 DEFAULT_ADAPTIVE_RATIO = 0.99
 NEDEFAULT = 100
 
-model_decod = tf.keras.models.load_model('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/model.keras')
+model_decod = tf.keras.models.load_model('autoencoder_model.keras')
 decoder = Model(inputs=model_decod.get_layer('dense_2').output, outputs=model_decod.get_layer('conv2d_16').output)
 decoder_CL = Model(inputs=model_decod.get_layer('dense_2').output, outputs=model_decod.get_layer('dense_7').output)
 
@@ -49,6 +49,7 @@ class StochEnKFParameters:
     Lyy: float = 1e10
     Lxy: float = 1e10
     islocal: bool = False
+    Ne: int = NEDEFAULT
 
     def __str__(self):
         return f"Stochastic EnKF with localization = {self.islocal}"
@@ -154,7 +155,11 @@ def create_initial_ensemble(x0, Ne, sigma_x):
 def create_ensemble(Ne, mean, Sigma_x):
     return np.random.multivariate_normal(mean=mean, cov=Sigma_x, size=Ne)
 
-def additive_inflation(X,Sigma_x):
+def create_ensemble_diag(Ne, mean, sigma_diag):
+    std = np.sqrt(sigma_diag)
+    return mean[None, :] + np.random.randn(Ne, mean.size) * std[None, :]
+    
+def additive_inflation(X: np.ndarray, Sigma_x: np.ndarray):
     """
     additive_inflation!(X,sigma_x)
     Add to `X` random noise drawn from a Gaussian distribution with
@@ -164,10 +169,10 @@ def additive_inflation(X,Sigma_x):
     noise = np.random.multivariate_normal(mean=np.zeros(Nx), cov=Sigma_x, size=Ne)  # shape (Ne, Nx)
     return X + noise
 
-def ensemble_perturb(X):
+def ensemble_perturb(X: np.ndarray):
     return X - np.mean(X,axis=0)
 
-def multiplicative_inflation(X,β):
+def multiplicative_inflation(X: np.ndarray, β: float):
     """
     multiplicative_inflation!(X,β)
     Carry out the operation ``\\bar{x} + \\beta(x^j - \\bar{x})`` for every ensemble
@@ -198,6 +203,15 @@ def whiten(X:np.ndarray,Sigma:np.ndarray):
     Remove the mean from the ensemble data in `X` and left-multiply each member by ``Sigma^{-1/2}``
     """
     return (np.linalg.inv(np.sqrt(Sigma))@(ensemble_perturb(X).T)).T
+
+def whiten_diag(X:np.ndarray, diag_Sigma:np.ndarray):
+    """
+    whiten(X:ndarray, diag_Sigma)
+
+    Remove the mean from the ensemble data in `X` and left-multiply each member by ``Sigma^{-1/2}``
+    """
+    inv_sqrt_diag = 1.0 / np.sqrt(diag_Sigma)   # [Ny]
+    return ensemble_perturb(X) * inv_sqrt_diag[None, :]      # [Ne, Ny]
 
 def allocate_jacobian(Nx,Ny,algo:LREnKFParameters):
     return np.zeros((Ny,Nx))
@@ -260,7 +274,7 @@ def lrenkf_kalman_update(algo,X_ens, Y_ens, ystar, Sigma_x, Sigma_eps, fdata, od
     Ur = U[:, :ry]  #shape (Ny,ry)
     X_lat_ens = X_ens[:,:x_lat_dim]
     
-    innov = ystar[None,:] - Y_ens   #shape (Ne,Ny)
+    innov = ystar[None,:] - Y_ens + eps   #shape (Ne,Ny)
     Y_hat = (Ur.T @ np.linalg.inv(np.sqrt(Sigma_eps)) @ innov.T).T   # shape (Ne,ry)
     Xp = (Vr.T @ whiten(X_lat_ens,Sigma_x).T).T     #shape (Ne,rx)
     HXp = (Ur.T @ whiten(Y_ens,Sigma_eps).T).T      #shape (Ne,ry)
@@ -278,6 +292,105 @@ def lrenkf_kalman_update(algo,X_ens, Y_ens, ystar, Sigma_x, Sigma_eps, fdata, od
     Cx_history.append(Cx.copy())
     Cy_history.append(Cy.copy())
     return X_lat_ens, Cx_history, Cy_history, rxhist, ryhist
+
+
+
+def senkf_kalman_update(algo,X_ens, Y_ens, ystar, sigma_x_diag, sigma_eps_diag, fdata, odata, eps):
+    global x_lat_dim
+    sqrt_Sigma_x = np.sqrt(sigma_x_diag)          # shape (Nx,)
+    inv_sqrt_Sigma_eps = 1.0 / np.sqrt(sigma_eps_diag)   # shape (Ny,)
+    
+    innov = ystar[None,:] - Y_ens + eps  #shape (Ne,Ny)
+    Y_hat_T = inv_sqrt_Sigma_eps[:, None] * innov.T    # shape (Ny,Ne)
+    
+    Xp = whiten_diag(X_ens, sigma_x_diag)     #shape (Ne,Nx)
+    HXp = whiten_diag(Y_ens,sigma_eps_diag)      #shape (Ne,Ny)
+    # eps_p = whiten_diag(eps,sigma_eps_diag)      #shape (Ne,Ny)
+    
+    CHH = cross_covariance(HXp, HXp)  #shape (Ny,Ny)
+    # Cee = cross_covariance(eps_p, eps_p)  #shape (Ny,Ny)
+    Ny  = Y_ens.shape[1]
+    I = np.eye(Ny, dtype=Y_ens.dtype)
+    Sigma_Y_tilde  = CHH + I
+    # Sigma_Y_tilde = CHH + Cee   #shape (Ny,Ny)
+    
+    Sigma_XY_tilde = cross_covariance(Xp, HXp) #shape (Nx,Ny)
+    
+    X_ens += ((sqrt_Sigma_x[:, None] * Sigma_XY_tilde) @ np.linalg.solve(Sigma_Y_tilde, Y_hat_T)).T      #shape (Ne,Nx)
+    
+    return X_ens
+
+def enkf(algo:StochEnKFParameters, X, inflate=True, beta=1.0):
+    return _enkf(algo, X, inflate, beta)
+
+
+def _enkf(algo:LREnKFParameters, X, inflate, beta):
+    """
+    Perform Low-rank Ensemble Kalman Filter (EnKF) assimilation of pressure observations.
+
+    Parameters:
+    - algo: StochEnKFParameters
+    - X: ndarray, initial ensemble tensor of state distribution augmented by the encoded AoA. Shape: (Ne, Nx+len(AoA))
+    - inflate: bool, whether to apply inflation
+    - beta: float, multiplicative inflation parameter
+
+    Returns:
+    - Xf: list, forecasted ensemble matrices
+    - Cx_history: list, history of state Gramians
+    - Cy_history: list, history of observation Gramians
+    - rxhist: list, history of truncated dimensions of the state Gramians
+    - ryhist: list, history of truncated dimensions of the observation Gramians
+    """
+    global x_lat_dim
+    forecast, observation, fdata, odata, dt_dyn, dt_obs, tspan = algo.forecast, algo.observation, algo.fdata, algo.odata, algo.dt_dyn, algo.dt_obs, algo.tspan
+    Nx = fdata.Nx
+    Ny = measurement_length(odata)
+    ytrue = odata.obs_data
+    Xf, Xa = [X[:,:x_lat_dim].copy()], [X[:,:x_lat_dim].copy()]
+    ystar = np.zeros((Ny))
+    t0, t_f = tspan
+    step = int(np.ceil(dt_obs / dt_dyn))
+    n0 = int(np.ceil(t0 / dt_obs))
+    n_dyn = int((t_f - t0)) - 1
+    Dcycle = range(n0,n_dyn)
+    
+    AoA_enc = X[0,x_lat_dim:]
+    sigma_eps_diag = np.full(Ny, odata.sigma_eps**2)   # shape (Ny,)
+    
+    # Run the EnKF
+    for i in tqdm(Dcycle, desc="EnKF Progress"):
+        # Forecast step
+        if i==0 or (i % step == 0):
+            dX_lat = forecast(X, training=False).numpy()    # X.shape: (Ne,Nx+len(AoA))
+            X_lat = X[:, :x_lat_dim] + dt_dyn * dX_lat  # Update only the latent variables
+            X_lat = additive_inflation(X_lat, fdata.Sigma_x)
+            Xf.append(X_lat.copy())
+            ystar = ytrue[i+1]
+            
+            if inflate:
+                X_lat = multiplicative_inflation(X_lat, beta)
+            
+            # Compute marginally the variance of the state ensemble
+            std_dev = np.std(X_lat, axis=0)
+            # Sigma_x = np.diag(std_dev ** 2)
+            sigma_x_diag = std_dev ** 2
+            
+            # Observation update
+            Y = observation(X_lat, training=False).numpy() #shape (Ne,Ny)
+            # Sigma_eps = np.diag(np.ones(Ny)*odata.sigma_eps**2)  #shape (Ny,Ny)
+            eps = create_ensemble_diag(algo.Ne,np.zeros(Ny),sigma_eps_diag)   #shape (Ne,Ny)
+            X_lat =  senkf_kalman_update(algo,X_lat,Y,ystar,sigma_x_diag,sigma_eps_diag,fdata,odata,eps)
+            
+            Xa.append(X_lat.copy())
+            X[:, :x_lat_dim] = X_lat
+        else:
+            dX_lat = forecast(X, training=False).numpy()    # X.shape: (Ne,Nx+len(AoA))
+            X_lat = X[:, :x_lat_dim] + dt_dyn * dX_lat  # Update only the latent variables
+            X_lat = additive_inflation(X_lat, fdata.Sigma_x)
+            Xf.append(X_lat.copy())
+            X[:, :x_lat_dim] = X_lat
+    return Xf, Xa
+
 
 def lrenkf(algo:LREnKFParameters, X, inflate=True, beta=1.0):
     return _lrenkf_CL_data(algo, X, inflate, beta)
@@ -327,7 +440,7 @@ def _lrenkf_CL_data(algo:LREnKFParameters, X, inflate, beta):
     for i in tqdm(Dcycle, desc="LREnKF Progress"):
         # Forecast step
         if i==0 or (i % step == 0):
-            dX_lat = forecast.predict(X)    # X.shape: (Ne,Nx+len(AoA))
+            dX_lat = forecast(X, training=False).numpy()    # X.shape: (Ne,Nx+len(AoA))
             X_lat = X[:, :x_lat_dim] + dt_dyn * dX_lat  # Update only the latent variables
             X_lat = additive_inflation(X_lat, fdata.Sigma_x)
             Xf.append(X_lat.copy())
@@ -342,7 +455,7 @@ def _lrenkf_CL_data(algo:LREnKFParameters, X, inflate, beta):
             
             # Observation update
             Y = np.zeros((algo.Ne, Ny))
-            Y = observation.predict(X_lat) #shape (Ne,Ny)
+            Y = observation(X_lat, training=False).numpy() #shape (Ne,Ny)
             Sigma_eps = np.diag(np.ones(Ny)*odata.sigma_eps**2)  #shape (Ny,Ny)
             eps = create_ensemble(algo.Ne,np.zeros(Ny),Sigma_eps)   #shape (Ne,Ny)
             X_lat, Cx_history, Cy_history, rxhist, ryhist =  lrenkf_kalman_update(algo,X_lat,Y,ystar,Sigma_x,Sigma_eps,fdata,odata,Cx_history,Cy_history,rxhist,ryhist,Cx,Cy,Jac,eps)
@@ -350,7 +463,7 @@ def _lrenkf_CL_data(algo:LREnKFParameters, X, inflate, beta):
             Xa.append(X_lat.copy())
             X = np.concatenate([X_lat, X[:, x_lat_dim:]], axis=-1)
         else:
-            dX_lat = forecast.predict(X)    # X.shape: (Ne,Nx+len(AoA))
+            dX_lat = forecast(X, training=False).numpy()    # X.shape: (Ne,Nx+len(AoA))
             X_lat = X[:, :x_lat_dim] + dt_dyn * dX_lat  # Update only the latent variables
             X_lat = additive_inflation(X_lat, fdata.Sigma_x)
             Xf.append(X_lat.copy())
