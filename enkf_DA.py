@@ -10,7 +10,7 @@ from keras.preprocessing.sequence import pad_sequences
 from keras.models import Model
 
 import sys
-sys.path.append('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/LREnKF/LREnKF_lat_dim_7_long_time/process_noise_Q')
+sys.path.append('your_project_path')  # Adjust this path to where LREnKF.py is located
 from LREnKF import *
 
 def load_pressure(AoA:np.ndarray, ranget, rangep, cases:np.ndarray):
@@ -57,8 +57,8 @@ def load_lift(AoA:np.ndarray, ranget, cases:np.ndarray):
     y_CL = np.concatenate(y_CL_list, axis=0)
     return y_CL
 
-idx_test = np.load('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/idx_test.npy')
-x_lat_true = np.load('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/x_lat.npy')
+idx_test = np.load('idx_test.npy')
+x_lat_true = np.load('x_lat.npy')
 
 nsnap = 500
 x_lat = x_lat_true.copy()
@@ -113,8 +113,8 @@ def ode_integrate(f, x0, t, dt=1.0):
         xs.append(x_lat)
     return tf.stack(xs, axis=1)  # shape: (batch, nsnap, lat_dim)
 
-forecast = tf.keras.models.load_model('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/dynamics/NeuralODE_lat_dim_7_long_time/model.keras', custom_objects={'LatentODEFunc': LatentODEFunc})
-model_decod = tf.keras.models.load_model('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/model.keras')
+forecast = tf.keras.models.load_model('forecast_model.keras', custom_objects={'LatentODEFunc': LatentODEFunc})
+model_decod = tf.keras.models.load_model('autoencoder_model.keras')
 observation = Model(inputs=model_decod.get_layer('dense_2').output, outputs=model_decod.get_layer('dense_6').output)
 decoder_CL = Model(inputs=model_decod.get_layer('dense_2').output, outputs=model_decod.get_layer('dense_7').output)
 
@@ -137,27 +137,27 @@ idx_test = np.sort(idx_test)
 test_idx = [3, 23, 46, 62, 84]  # sample test cases at AoA = 20, 30, 40, 50, 60 respectively
 
 ## construct state ensemble
-idx_case = idx_test[test_idx[4]]    # test case at AoA = 60
+idx_case = idx_test[test_idx[0]]    # test case at AoA = 20
 C_L = CL_cases[idx_case,initial_lag:,0]
 set_x_lat_dim(x_lat_true.shape[-1])
 Ne = 200                            # ensemble size 
-x0 = x_lat_cases[idx_case,initial_lag]
+x0 = x_lat_cases[idx_case,initial_lag] + 0.5    # Biased initial guess for the latent state, shape (lat_dim,)
 AoA_enc = AoA_cases[idx_case,0]
 x0 = np.concatenate([x0,AoA_enc], axis=0)
 x_true = x_lat_cases[idx_case,initial_lag:]
-Sigma_x = np.load('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/dynamics/NeuralODE_lat_dim_7_long_time/Q.npy')    # Process noise covariance
-X0 = create_initial_ensemble(x0, Ne, 1e-2)   #shape (Ne,1,lat_dim+len(AoA))
+Sigma_x = np.load('Q.npy')    # Process noise covariance
+X0 = create_initial_ensemble(x0, Ne, 5e-1)   #shape (Ne,1,lat_dim+len(AoA))
 fdata = ForecastData(x_lat_true.shape[-1], Sigma_x)
 
 ## Construct observation ensemble
-sigma_eps = (np.load('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/gaussian_force/autoencoder/autoencoder_temporal_loss/autoencoder_temporal_loss_7_long_time/std_meas.npy')).item() # Observation noise standard deviation
+sigma_eps = (np.load('std_meas.npy')).item() # Observation noise standard deviation
 y_truth = Y_pres_cases[idx_case,initial_lag:]
 xsens0 = []
 ysens0 = []
 sens = Sensor(xsens0, ysens0, Nsens)
 odata = ObservationData(sens,sigma_eps,y_truth, observation)
 
-with h5py.File('/u/project/sofia/hanieh/EnKFthroughLearnedOperators/data_generation_gaussian_forcing/AoA20/AoA20_RD1.jld2', "r") as output:
+with h5py.File('AoA20/AoA20_RD1.jld2', "r") as output:
     dt = output['Δt'][()]
 dt *= 20    # Adjusting time step according to the snapshot frequency
 
@@ -165,10 +165,16 @@ dt *= 20    # Adjusting time step according to the snapshot frequency
 dt_dyn = dt
 dt_obs = dt_dyn
 tspan = (0,nsnap-initial_lag)
-lowrankEnKF = LREnKFParameters(forecast, observation, fdata, odata, dt_dyn, dt_obs, tspan, Ne=Ne)
-Xf, Xa, Cx_history, Cy_history, rxhist, ryhist = lrenkf(lowrankEnKF, X0.copy(), beta=1.0)
 
-np.savez('AoA60_test.npz', Xa=Xa, Xf=Xf, Cx_history=Cx_history, Cy_history=Cy_history, rxhist=rxhist, ryhist=ryhist)
+# For estimation, we can directly apply the EnKF in the latent space, which is low-dimensional and computationally efficient.
+senkf = StochEnKFParameters(forecast, observation, fdata, odata, dt_dyn, dt_obs, tspan, Ne=Ne)
+Xf, Xa = enkf(senkf, X0.copy(), beta=1.0)
+
+# However, for post-hoc analysis of informative obsrevation directions, we can run low-rank enkf (while keeping all ranks to resemble EnKF)  
+# to compute the state-space and observation space Gramians, from which the eigendecomposition can be performed to identify 
+# the most informative directions in the observation space.
+lowrankEnKF = LREnKFParameters(forecast, observation, fdata, odata, dt_dyn, dt_obs, tspan, Ne=Ne, ratio=1.0)
+Xf, Xa, Cx_history, Cy_history, rxhist, ryhist = lrenkf(lowrankEnKF, X0.copy(), beta=1.0)
 
 
 ## Then, we only need to lift the latent state analysis ensemble (Xa) back to the full state space thriugh the pretrained decoder.
